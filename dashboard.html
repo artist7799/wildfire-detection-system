@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Fire Detection Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{
+    font-family: Arial;
+    text-align:center;
+    background:#111;
+    color:white;
+}
+
+.box{
+    margin-top:50px;
+    font-size:40px;
+}
+
+.safe{
+    color:lime;
+}
+
+@keyframes fireAnimation{
+0% { opacity:1; text-shadow:0 0 5px red; }
+50% { opacity:0.5; text-shadow:0 0 20px orange; }
+100% { opacity:1; text-shadow:0 0 5px red; }
+}
+
+.fire{
+color:red;
+font-weight:bold;
+animation: fireAnimation 1s infinite;
+}
+
+body{
+font-family: 'Segoe UI', Arial;
+background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+color:white;
+text-align:center;
+margin:0;
+padding:0;
+}
+
+.container{
+margin-top:80px;
+}
+
+.title{
+font-size:40px;
+font-weight:bold;
+margin-bottom:40px;
+}
+
+.card{
+background: rgba(255,255,255,0.08);
+padding:40px;
+border-radius:15px;
+width:400px;
+margin:auto;
+box-shadow:0 10px 30px rgba(0,0,0,0.5);
+}
+
+.value{
+font-size:35px;
+margin-top:20px;
+}
+
+.status{
+font-size:35px;
+margin-top:20px;
+font-weight:bold;
+}
+
+.safe{
+color:#00ff9d;
+}
+
+.fire{
+color:#ff3b3b;
+animation: fireGlow 1s infinite;
+}
+
+@keyframes fireGlow{
+0%{text-shadow:0 0 5px red;}
+50%{text-shadow:0 0 20px orange;}
+100%{text-shadow:0 0 5px red;}
+}
+
+button{
+margin-top:20px;
+padding:10px 25px;
+font-size:16px;
+border:none;
+border-radius:8px;
+background:#ff9800;
+color:white;
+cursor:pointer;
+}
+</style>
+
+</head>
+
+<body>
+
+<div style="margin-top:20px;">
+<video id="camera" width="400" autoplay></video>
+<canvas id="canvas" width="400" heigth="300" style="display:none;"></canvas>
+</div>
+<audio id="alarmSound" preload="auto">
+<source src="/static/alarm.mp3" type="audio/mpeg">
+</audio>
+
+<div class="container">
+
+<div class="title">
+🔥 Fire Detection System
+</div>
+
+<div class="card">
+
+<button onclick="enableSound()">Enable Alarm</button>
+
+<div class="value">
+Smoke Value:
+<span id="smoke">0</span>
+</div>
+
+<div class="status">
+Status:
+<span id="status" class="safe">SAFE</span>
+</div>
+
+<div style="width:250px;margin:auto;margin-top:30px;">
+<canvas id="smokeGauge"></canvas>
+</div>
+
+</div>
+
+</div>
+
+
+
+<script>
+let fireTriggered = false;
+
+// Access laptop camera
+const video = document.getElementById("camera");
+function startCamera(){
+navigator.mediaDevices.getUserMedia({ video: true })
+.then(stream => {
+    video.srcObject = stream;
+})
+.catch(err => {
+    console.log("Camera error:", err);
+});
+}
+
+function sendFrame(){
+
+const canvas = document.getElementById("canvas");
+const context = canvas.getContext("2d");
+
+context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+canvas.toBlob(function(blob){
+
+let formData = new FormData();
+formData.append("file", blob, "frame.jpg");
+
+fetch("/predict", {
+method: "POST",
+body: formData
+})
+.then(response => response.json())
+.then(data => {
+console.log(data);
+})
+.catch(err => console.log(err));
+
+}, "image/jpeg");
+
+}
+
+
+
+function enableSound(){
+let alarm = document.getElementById("alarmSound");
+alarm.muted = false;
+alarm.play()
+.then(() => {
+    alarm.pause();
+    alarm.currentTime = 0;
+    alert("Alarm enabled successfully");
+})
+.catch(err => {
+    console.log("Audio enable error:",e);
+});
+}
+
+
+let gaugeValue = 0;
+
+const ctx = document.getElementById("smokeGauge");
+
+const smokeGauge = new Chart(ctx, {
+type: "doughnut",
+data: {
+labels: ["Smoke","Remaining"],
+datasets: [{
+data: [0,5000],
+backgroundColor: ["#ff3b3b","#1e293b"],
+borderWidth:0
+}]
+},
+options:{
+rotation:-90,
+circumference:180,
+cutout:"70%",
+plugins:{
+legend:{display:false}
+}
+}
+});
+
+function updateData(){
+
+
+fetch("/latest")
+.then(res => res.json())
+.then(data => {
+
+document.getElementById("smoke").innerText = data.smoke;
+
+
+smokeGauge.data.datasets[0].data[0] = data.smoke;
+smokeGauge.data.datasets[0].data[1] = 5000 - data.smoke;
+smokeGauge.update();
+
+
+
+if(Number(data.smoke) > 2000 && !fireTriggered){
+   fireTriggered = true;
+   document.body.style.background = "#330000";
+   document.getElementById("status").innerText = "🔥 FIRE DETECTED";
+   document.getElementById("status").className = "fire";
+   let alarm = document.getElementById("alarmSound");
+
+   alarm.loop=true;
+   alarm.play().catch(e => consle.log("Audio blocked",e));
+   alert("🔥 WARNING! FIRE DETECTED!"); 
+   
+    
+   startCamera();
+   sendFrame();
+}
+else if(Number(data.smoke) <= 2000){
+    fireTriggered = false;
+
+
+
+
+    document.body.style.background = "#111";
+    document.getElementById("status").innerText = "SAFE";
+    document.getElementById("status").className = "safe";
+    let alarm = document.getElementById("alarmSound");
+
+    alarm.pause();
+    alarm.currentTime=0;
+}
+})
+.catch(error => {
+console.log("Error:", error);
+});
+
+}
+
+setInterval(updateData,2000)
+
+
+updateData();
+</script>
+
+</body>
+</html>
