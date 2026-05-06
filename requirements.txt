@@ -1,0 +1,10 @@
+flask
+ultralytics
+pillow
+python-dotenv
+twilio
+sendgrid
+cloudinary
+gdown
+requests
+tqdm
